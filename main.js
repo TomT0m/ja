@@ -24,23 +24,33 @@
     }
 
 
-    let query_t = 
-`select distinct ?lex ?item ?itemLabel ?lemma ?lemma_hira ?min ?max {
-        {
+    let query_lex_t = 
+`select distinct ?def ?lex ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("lex" as ?type){
+#        {
             ?lex dct:language wd:Q5287 ;
                     wikibase:lemma ?lemma  filter(lang(?lemma)="ja") .
-        } union {
-            ?item rdfs:label ?lemma .
-        }
+#            optional {
+#                ?item rdfs:label ?lemma .
+#            }
+#        } union {
+#            ?item rdfs:label ?lemma .
+#            otional {
+#                ?lex dct:language wd:Q5287 ;
+#                wikibase:lemma ?lemma  filter(lang(?lemma)="ja") .
+#            }
+#        }
         optional {
             ?lex wikibase:lemma ?lemma_hira filter(lang(?lemma_hira)="ja-hira")
         }
         optional {
             ?lex ontolex:sense ?sense .
-            #optional { 
+            optional { 
                 ?sense wdt:P5137 ?item . 
-            #}
-            #optional { ?sense skos:definition ?def . }
+            }
+            optional { ?sense skos:definition ?defFr filter (lang(?defFr)="fr") }
+            optional { ?sense skos:definition ?defEn filter (lang(?defEn)="en") }
+            bind(coalesce(?defFr,?defEn) as ?def) 
+            filter (bound(?def)||bound(?item))
         }
         # filter ( bound(?item) || bound(?definition) ) .
         ${query_label_service()}
@@ -49,6 +59,17 @@
         }
     } order by ?min desc(?max) # limit 1000
     `;
+    let query_item_t = `
+    select distinct ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("item" as ?type){
+
+        values {
+
+        }
+    }
+    values (?lemma ?min ?max) {
+        $values
+    }
+    `; 
     let value = (val) => { 
         if(val){ 
             switch(val.datatype){
@@ -71,7 +92,8 @@
                 tuples.push(`('${input.substring(i, j)}'@ja ${i} ${j} )`);
             }
         }
-        let query = query_t.replace("$values", tuples.join("\n\t"));
+        
+        let query = query_lex_t.replace("$values", tuples.join("\n\t"));
         let encoded_sparql = encodeURIComponent(query);
         let link = $("<a>", {
             href: `https://query.wikidata.org/#${encoded_sparql}`,
@@ -86,18 +108,28 @@
             let item = value(res.item);
             let itemLabel = value(res.itemLabel);
             
-            let rendered = $(`<a href="${lex_url}">${value(res.lemma)}</a><br/>${value(res.lemma_hira)}`);
+            let rendered = $("<div/>").append($(`<a href="${lex_url}">${value(res.lemma)}</a>`));
+            let hira = value(res.lemma_hira);
+            let def = value(res.def);
+
+            if (hira){
+                rendered.append( [$("<br/>"), `【${hira}】`]);
+            }
+            
             if (item!=""){
                 let itemLink = $("<a>",{href:item, text:itemLabel});
                 rendered.append([$("<br/>"),itemLink]);
+            }
+            if (def !=""){
+                rendered.append(["<br/>", def]);
             }
             let attrs = {
                 class:"result",
                 style:`grid-column-start:${column+1};grid-column-end:${column_end+1};`
             }
-            //if (row === 1){
-                attrs.style+=(`grid-row-start:${row};`);
-            //}
+            
+            attrs.style+=(`grid-row-start:${row};`);
+            
             return $(`<div>`,attrs).append(rendered);
         }
 
