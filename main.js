@@ -25,20 +25,10 @@
 
 
     let query_lex_t = 
-`select distinct ?def ?lex ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("lex" as ?type){
-#        {
-            ?lex dct:language wd:Q5287 ;
-                    wikibase:lemma ?lemma  filter(lang(?lemma)="ja") .
-#            optional {
-#                ?item rdfs:label ?lemma .
-#            }
-#        } union {
-#            ?item rdfs:label ?lemma .
-#            otional {
-#                ?lex dct:language wd:Q5287 ;
-#                wikibase:lemma ?lemma  filter(lang(?lemma)="ja") .
-#            }
-#        }
+`select distinct ?def ?lex ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("lex" as ?type) ?verb_action{
+        ?lex dct:language wd:Q5287 ;
+                wikibase:lemma ?lemma  filter(lang(?lemma)="ja") .
+
         optional {
             ?lex wikibase:lemma ?lemma_hira filter(lang(?lemma_hira)="ja-hira")
         }
@@ -47,28 +37,30 @@
             optional { 
                 ?sense wdt:P5137 ?item . 
             }
+            optional { 
+                ?sense wdt:P9970 ?verb_action . 
+            }
             optional { ?sense skos:definition ?defFr filter (lang(?defFr)="fr") }
             optional { ?sense skos:definition ?defEn filter (lang(?defEn)="en") }
             bind(coalesce(?defFr,?defEn) as ?def) 
             filter (bound(?def)||bound(?item))
         }
-        # filter ( bound(?item) || bound(?definition) ) .
+
         ${query_label_service()}
-        values (?lemma ?min ?max) {
+        values ?lemma {
               $values
         }
     } order by ?min desc(?max) # limit 1000
     `;
     let query_item_t = `
-    select distinct ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("item" as ?type){
+select distinct ?item ?itemLabel ?lemma ?lemma_hira ?min ?max ("item" as ?type){
 
-        values {
+    ?item rdfs:label ?lemma .
 
-        }
-    }
-    values (?lemma ?min ?max) {
+    values ?lemma {
         $values
     }
+}
     `; 
     let value = (val) => { 
         if(val){ 
@@ -81,19 +73,42 @@
         }
     };
 
+    function compute_lemma_indexes(japanese){
+        let indexes_t={}
+        let len = japanese.length;
+        function insert_in_table(str, indexes){
+            if (! (str in indexes_t)){
+                indexes_t[str] = [indexes]
+            }
+            else{
+                indexes_t[str].push(indexes)
+            }
+        };
+        
+        
+        for (let i = 0; i <= len; i++) {
+            for (let j = i + 1; j <= len && j<=i+13; j++) {
+                insert_in_table(japanese.substring(i, j), [i, j]);
+            }
+        }
+        return indexes_t
+    }
+
     function handle_new_input(input) {
-        let len = input.length;
-        let tuples = [];
+
+        // let tuples = [];
 
         $("#container").text(input);
 
-        for (let i = 0; i <= len; i++) {
+        /*for (let i = 0; i <= len; i++) {
             for (let j = i + 1; j <= len && j<i+13; j++) {
                 tuples.push(`('${input.substring(i, j)}'@ja ${i} ${j} )`);
             }
-        }
-        
-        let query = query_lex_t.replace("$values", tuples.join("\n\t"));
+        }*/
+        let candidates_with_index = compute_lemma_indexes(input);
+        let strings = Object.keys(candidates_with_index).map(candidate => `'${candidate}'@ja` )
+
+        let query = query_lex_t.replace("$values", strings.join("\n\t"));
         let encoded_sparql = encodeURIComponent(query);
         let link = $("<a>", {
             href: `https://query.wikidata.org/#${encoded_sparql}`,
@@ -101,10 +116,10 @@
         });
         $("#container").append(link);
 
-        function render_result(res, row){
+        function render_result(res, row, column, column_end){
             let lex_url = value(res.lex);
-            let column = value(res.min);
-            let column_end = value(res.max);
+            // let column = value(res.min);
+            // let column_end = value(res.max);
             let item = value(res.item);
             let itemLabel = value(res.itemLabel);
             
@@ -137,7 +152,19 @@
             result => {
 
                 let bd = result.results.bindings;
-                
+                let results_with_indexes = []
+                for (i in bd){
+                    let v = bd[i];
+                    let word = value(v.lemma)
+                    let idxs = candidates_with_index[word]
+                    for(idx_idx in candidates_with_index[word]){
+                        results_with_indexes.push({start : idxs[idx_idx][0], end : idxs[idx_idx][1], bd: v })
+                    }
+                }
+                results_with_indexes.sort(
+                    (row1, row2) => (row1.start > row2.start) || (row1.start == row2.start && row1.end <= row2.end) 
+                )
+
                 let grid=$("<div/>",{class:"lex_grid"});
                 // entête de grille
                 input.split("").forEach( (letter,idx) => {
@@ -149,14 +176,14 @@
                 });
                 let current = []
                 
-                for (i in bd) {
-                    let v = bd[i];
+                for (i in results_with_indexes) {
+                    let v = results_with_indexes[i];
                     current.push(v);
-                    let cur_min = value(v.min);
+                    let cur_min = v.start;
                     current = current.filter(
-                        (stack_val) =>  (value(stack_val.max) > cur_min)
+                        (stack_val) =>  (stack_val.end > cur_min)
                     );
-                    grid.append(render_result(v, current.length + 1));
+                    grid.append(render_result(v.bd, current.length + 1, v.start, v.end));
                 };
                 $("#container").append(grid);
             }
