@@ -1,0 +1,36 @@
+{
+
+    "manifest_version": 2,
+    "name": "JaLex",
+    "version": "1.0",
+  
+    "description": "Helper to deal with Japanese words and search informations",
+  
+    "icons": {
+      "48": "extension/logo.png"
+    },
+  
+    "content_scripts": [
+      {
+        "matches": ["*://*.mozilla.org/*"],
+        "js": ["ja-words.js", "lib.js", "jquery.js"],
+        "css": [
+          "main.css"
+        ]
+      }
+    ],
+    "permissions": [
+      "<all_urls>",
+      "storage",
+      "contextMenus"
+    ],
+    "background": {
+      "scripts": ["jquery.js", "ja-words.js", "lib.js"]
+    },
+    "commands": {
+      "translateJa": {
+        "description": "__MSG_translateTextMenu__"
+      }
+
+    }
+}

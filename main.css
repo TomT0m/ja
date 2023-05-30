@@ -16,3 +16,8 @@
 .letter {
     font-size: 1em;
 }
+
+.ja_view {
+    position:absolute;
+    top:10 px;
+}
